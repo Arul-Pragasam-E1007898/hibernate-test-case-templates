@@ -3,18 +3,24 @@ package org.hibernate.bugs;
 import static org.hibernate.testing.transaction.TransactionUtil.doInJPA;
 
 import java.io.Serializable;
+import java.time.Instant;
+import java.util.Date;
 
+import jakarta.persistence.CascadeType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Embeddable;
 import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.EntityManagerFactory;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.MapsId;
+import jakarta.persistence.OneToOne;
 import jakarta.persistence.Persistence;
 import jakarta.persistence.Table;
-import org.hibernate.annotations.PartitionKey;
 import org.hibernate.annotations.SQLInsert;
 import org.junit.After;
 import org.junit.Before;
@@ -48,11 +54,27 @@ public class EmbeddedIdTest {
 
 		doInJPA( ()->entityManagerFactory, em -> {
 			CompositeKey key = new CompositeKey();
-			key.setAccountId(1L);
+			key.setAccountId(1679911196L);
+			key.setId(3L);
+
+			SalesContact salesContact = em.find(SalesContact.class, key);
+			System.out.println(salesContact.getKey().getAccountId());
 
 			SalesContact contact = new SalesContact();
+			CompositeKey insertKey = new CompositeKey();
+			insertKey.setAccountId(1679911196L);
 			contact.setFirstName("John");
-			contact.setKey(key);
+			contact.setLastName("Doe");
+			contact.setKey(insertKey);
+
+			ContactCustomField2 contactCustomField2 = new ContactCustomField2();
+			contactCustomField2.setKey(insertKey);
+			contact.setContactCustomField2(contactCustomField2);
+
+			ContactCustomField contactCustomField = new ContactCustomField();
+			contactCustomField.setKey(insertKey);
+			contact.setContactCustomField(contactCustomField);
+
 			entityManager.persist( contact );
 
 			Assertions.assertNotNull(key.getId());
@@ -63,14 +85,22 @@ public class EmbeddedIdTest {
 	}
 
 	@Embeddable
-	class CompositeKey implements Serializable {
+	public static class CompositeKey implements Serializable {
 		@Column(name = "account_id")
-		@PartitionKey
 		private Long accountId;
 
 		@Column(name = "id")
-		@GeneratedValue(strategy = GenerationType.IDENTITY)
+		//@GeneratedValue(strategy = GenerationType.IDENTITY)
 		private Long id;
+
+		public CompositeKey(Long accountId, Long id){
+			this.accountId = accountId;
+			this.id = id;
+		}
+
+		public CompositeKey(){
+
+		}
 
 		public Long getAccountId() {
 			return accountId;
@@ -92,9 +122,9 @@ public class EmbeddedIdTest {
 	@Table(name = "contacts")
 	@Entity
 	@SQLInsert(
-		sql = "insert into contacts (account_id, first_name, last_name) values (?, ?, ?)"
+		sql = "insert into contacts (created_at, first_name, last_name, updated_at, account_id, id)  values (?, ?, ?, ?, ?, ?)"
 	)
-	public class SalesContact
+	public static class SalesContact
 		implements Serializable {
 
 		@EmbeddedId
@@ -106,9 +136,19 @@ public class EmbeddedIdTest {
 		@Column(name = "last_name")
 		private String lastName;
 
+		@Column(name = "created_at")
+		private Instant createdAt;
+
+		@Column(name = "updated_at")
+		private Instant updatedAt;
 
 		public String getFirstName() {
 			return firstName;
+		}
+
+		public SalesContact(){
+			this.createdAt = Instant.now();
+			this.updatedAt = Instant.now();
 		}
 
 		public void setFirstName(String firstName) {
@@ -129,6 +169,87 @@ public class EmbeddedIdTest {
 
 		public void setKey(CompositeKey key) {
 			this.key = key;
+		}
+
+		@OneToOne(mappedBy = "contact", cascade = CascadeType.ALL)
+		private ContactCustomField contactCustomFields = new ContactCustomField();
+
+		@OneToOne(mappedBy = "contact", cascade = CascadeType.ALL)
+		private ContactCustomField2 contactCustomField2 = new ContactCustomField2();
+
+		public ContactCustomField getContactCustomFields(){
+			return contactCustomFields;
+		}
+
+		public ContactCustomField2 getContactCustomField2(){
+			return contactCustomField2;
+		}
+		public void setContactCustomField2(ContactCustomField2 contactCustomField2){
+			this.contactCustomField2=contactCustomField2;
+			contactCustomField2.setContact(this);
+		}
+		public void setContactCustomField(ContactCustomField contactCustomField){
+			this.contactCustomFields=contactCustomField;
+			contactCustomFields.setContact(this);
+		}
+	}
+
+	@Table(name = "contact_custom_fields")
+	@Entity
+	public static class ContactCustomField{
+		@EmbeddedId
+		private CompositeKey key;
+
+		public ContactCustomField(){
+
+		}
+
+		public void setKey(CompositeKey key) {
+			this.key = key;
+		}
+
+		@OneToOne(fetch = FetchType.LAZY)
+		@MapsId
+		@JoinColumn(name = "contact_id", referencedColumnName = "id")
+		@JoinColumn(name = "account_id", referencedColumnName = "account_id")
+		private SalesContact contact;
+
+		public CompositeKey getId(){
+			return key;
+		}
+
+		public void setContact(SalesContact contact){
+			this.contact=contact;
+		}
+
+	}
+
+	@Table(name = "contact_custom_field2")
+	@Entity
+	public static class ContactCustomField2{
+		@EmbeddedId
+		private CompositeKey key;
+
+		public ContactCustomField2(){
+
+		}
+
+		public void setKey(CompositeKey key) {
+			this.key = key;
+		}
+
+		@OneToOne(fetch = FetchType.LAZY)
+		@MapsId
+		@JoinColumn(name = "contact_id", referencedColumnName = "id")
+		@JoinColumn(name = "account_id", referencedColumnName = "account_id")
+		private SalesContact contact;
+
+		public CompositeKey getId(){
+			return key;
+		}
+
+		public void setContact(SalesContact contact){
+			this.contact=contact;
 		}
 	}
 }
